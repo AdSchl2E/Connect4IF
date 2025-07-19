@@ -44,6 +44,12 @@ asserta( player(P, Type) ) - indicates which players are human/computer.
 */
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%     MODULES
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- use_module(library(pce)).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%     FACTS
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -84,7 +90,9 @@ score_board([
 
 run :-
     hello,          %%% Display welcome message, initialize game
-    play(1),        %%% Play the game starting with player 1
+    board(B),       %%% Get the current board
+    create_board_window(W, B), % Create the board window
+    play(1, W),        %%% Play the game starting with player 1
     goodbye.        %%% Display end of game message
 
 run :-
@@ -199,13 +207,14 @@ human_playing(_) :-
 %.......................................
 % main function
 
-play(P) :-
+play(P, W) :-
     board(B), !,
     output_board(B), !,
+    update_board(W, B), !,
     not(game_over(P, B)), !,
     make_move(P, B), !,
     next_player(P, P2), !,
-    play(P2), !
+    play(P2, W), !
     .
 
 %.......................................
@@ -252,7 +261,9 @@ make_move2(computer, P, B, B2) :-
     player(P,Z,IA),
     % write(IA),
     jeu_IA(IA, B, M, S, U),
+    write('Computer places '), write(M),
     move(B, S, M, B2),
+    write(' in column '), write(S), write('.'),
     nl, nl,
     write('Computer places '), write(M),
     write(' in column '), write(S), write('.').
@@ -381,6 +392,7 @@ game_over2(P, B) :-
 % game is over if there are no blank squares left
 game_over2(P, B) :-
     moves(B, L),
+    % write(L),nl,
     L == [].
 
 
@@ -864,6 +876,105 @@ output_column_numbers :-
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%% GUI
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+create_menu_window :-
+    new(W, dialog('Connect4IF')), 
+    send(W, size, size(550, 150)),
+    
+    add_colored_circles(W, 50),
+
+    send(W, background, colour(black)),  
+
+    send(W, append, new(Titre, text('Connect4IF'))),
+    send(Titre, font, font(helvetica, bold, 26)), 
+    send(Titre, colour, colour(white)),  
+    
+    send(W, append, new(Button1, button('Start', message(@prolog, start_game, W)))),
+    send(W, append, new(Button4, button('Quit', message(W, destroy)))),
+
+    % Ouvrir la fenêtre
+    send(W, open).
+
+start_game(W) :-
+    send(W, destroy),
+    run.
+
+% Ajouter des cercles alternant entre rouge et bleu
+add_colored_circles(W, N) :-
+    add_colored_circles(W, N, 0).
+
+add_colored_circles(_, 0, _) :- !.  % Arrêter quand N atteint 0
+add_colored_circles(W, N, Counter) :-
+    RandomX is random(550),  % Générer une position X aléatoire
+    RandomY is random(150),  % Générer une position Y aléatoire
+    send(W, display, new(Circle, circle(10))),  % Créer un cercle de rayon 10
+    
+    % Alterner les couleurs entre rouge et bleu
+    (   0 is Counter mod 2
+    ->  send(Circle, fill_pattern, colour(red))  % Rouge pour les cercles pairs
+    ;   send(Circle, fill_pattern, colour(blue))  % Bleu pour les cercles impairs
+    ),
+    
+    send(Circle, move, point(RandomX, RandomY)),  % Déplacer à la position aléatoire
+    NewCounter is Counter + 1,
+    NewN is N - 1,
+    add_colored_circles(W, NewN, NewCounter).  % Rappel pour ajouter le prochain cercle
+
+
+% Crée une fenêtre pour afficher le plateau
+create_board_window(W, B) :-
+    new(W, picture('Connect4IF')),
+    send(W, size, size(355, 305)),
+    send(W, open),
+    send(W, background, colour(black)),
+    draw_board(W, B, 6, 7).
+
+% Dessine le plateau sur la fenêtre
+draw_board(W, B, Rows, Cols) :-
+    draw_cells(W, B, Rows, Cols, Rows, 1).
+
+% Parcourt les cellules pour les dessiner
+draw_cells(_, _, 0, _, _, _) :- !.
+draw_cells(W, B, Row, Cols, TotalRows, TotalCols) :-
+    draw_row(W, B, Row, Cols, TotalRows, TotalCols),
+    NextRow is Row - 1,
+    draw_cells(W, B, NextRow, Cols, TotalRows, TotalCols).
+
+% Dessine une ligne donnée
+draw_row(_, _, _, 0, _, _) :- !.
+draw_row(W, B, Row, Col, TotalRows, TotalCols) :-
+    nth1(Col, B, Column),
+    nth1(Row, Column, M),
+    CellY is (TotalRows - Row) * 50 + 15,
+    CellX is (Col - 1) * 50 + 15,
+    draw_cell(W, M, CellX, CellY),
+    NextCol is Col - 1,
+    draw_row(W, B, Row, NextCol, TotalRows, TotalCols).
+
+% Dessine une cellule donnée
+draw_cell(W, M, X, Y) :-
+    (   M == x
+    ->  new(Circle, circle(40)),
+        send(Circle, fill_pattern, colour(red)),
+        send(W, display, Circle, point(X, Y))
+    ;   M == o
+    ->  new(Circle, circle(40)),
+        send(Circle, fill_pattern, colour(blue)),
+        send(W, display, Circle, point(X, Y))
+    ;   new(Box, box(40, 40)),
+        send(Box, fill_pattern, colour(grey20)),
+        send(W, display, Box, point(X, Y))
+    ).
+
+update_board(W, B) :-
+    send(W, clear),
+    draw_board(W, B, 6, 7),
+    send(W, expose).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%% UTILS
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -886,50 +997,9 @@ maximumListe([T|Q],X):-maximumListe(Q,M), (M<T -> X=T ; X=M). %X est assigné au
 
 
 
-% Run multiple games between two Random AIs and track results
-run_simulation(N, XWins, OWins, Draws) :-
-    run_games(N, 0, 0, 0, XWins, OWins, Draws).
 
-% Base case: No more games to play, return results
-run_games(0, X, O, D, XFinal, OFinal, DFinal) :- !,
-    write('Results:'), nl,
-    write('Player X wins: '), write(X), nl,
-    write('Player O wins: '), write(O), nl,
-    write('Draws: '), write(D), nl.
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%     MAIN
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-% Play a game, update results, and recurse
-run_games(N, X, O, D, XFinal, OFinal, DFinal) :-
-    initialize,                     % Reset board for a new game
-    asserta( player(1, computer, 1) ), % Assign Random AI to Player 1
-    asserta( player(2, computer, 4) ), % Assign Random AI to Player 2
-    nl, write('play start'),
-    play_clean(1),                         % Start game with Player 1
-    nl, write('play end'),
-    board(B),                        % Get final board state
-    output_board(B),                 % Output final board
-    write('Game over: '),
-    output_winner(B),
-    (   win(B, 'x') -> X1 is X + 1, O1 is O, D1 is D  % Player X wins
-    ;   win(B, 'o') -> X1 is X, O1 is O + 1, D1 is D  % Player O wins
-    ;   X1 is X, O1 is O, D1 is D + 1                 % Draw
-    ),
-    retract(board(_)),
-    retract(player(_, _, _)),
-    N1 is N - 1,
-    nl, write('Games remaining: '), write(N1), nl,
-    run_games(N1, X1, O1, D1, XFinal, OFinal, DFinal).
-
-play_clean(P) :-
-    board(B), !,
-    (game_over(P, B) -> true ;  % Stop if game is over
-        make_move(P, B), !,
-        next_player(P, P2), !,
-        play_clean(P2)).
-
-
-% Entry point to start simulation with N games
-simulate(N) :-
-    nl, nl,
-    run_simulation(N, XWins, OWins, Draws).
-
-:- run. % Start the game.
+:- create_menu_window.
